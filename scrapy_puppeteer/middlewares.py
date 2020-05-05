@@ -1,11 +1,15 @@
-"""This module contains the ``SeleniumMiddleware`` scrapy middleware"""
+"""This module contains the ``PuppeteerMiddleware`` scrapy middleware"""
 
 import asyncio
+import logging
+import sys, os
 
-from pyppeteer import launch
+from pyppeteer_fork import launch
 from scrapy import signals
 from scrapy.http import HtmlResponse
 from twisted.internet.defer import Deferred
+from promise import Promise
+from scrapy.exceptions import CloseSpider
 
 from .http import PuppeteerRequest
 
@@ -45,6 +49,8 @@ class PuppeteerMiddleware:
 
         page = await self.browser.newPage()
 
+        await page._client.send('Page.setDownloadBehavior', {"behavior": 'allow', "downloadPath": request.meta['dir']});
+
         # Cookies
         if isinstance(request.cookies, dict):
             await page.setCookie(*[
@@ -74,14 +80,24 @@ class PuppeteerMiddleware:
             },
         )
 
-        if request.wait_for:
-            await page.waitFor(request.wait_for)
-
         if request.screenshot:
             request.meta['screenshot'] = await page.screenshot()
 
         content = await page.content()
         body = str.encode(content)
+
+        try:
+            if request.script:
+                await Promise.all([
+                    page.waitForNavigation(),
+                    page.evaluate(request.script)
+                ])
+        except:
+            pass
+
+        if request.wait_for:
+            await page.waitFor(request.wait_for)
+
         await page.close()
 
         # Necessary to bypass the compression middleware (?)
