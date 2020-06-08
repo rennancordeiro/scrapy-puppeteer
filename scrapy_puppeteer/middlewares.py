@@ -9,7 +9,7 @@ from scrapy import signals
 from scrapy.http import HtmlResponse
 from twisted.internet.defer import Deferred
 from promise import Promise
-from scrapy.exceptions import CloseSpider
+from scrapy.exceptions import CloseSpider, IgnoreRequest
 
 from .http import PuppeteerRequest
 
@@ -28,7 +28,8 @@ class PuppeteerMiddleware:
         """Start the browser"""
 
         middleware = cls()
-        middleware.browser = await launch({'logLevel': crawler.settings.get('LOG_LEVEL')})
+        middleware.browser = await launch({'args': ['--no-sandbox'], 'dumpio':True, 'logLevel': crawler.settings.get('LOG_LEVEL')})
+        await middleware.browser.newPage()
         crawler.signals.connect(middleware.spider_closed, signals.spider_closed)
 
         return middleware
@@ -47,7 +48,11 @@ class PuppeteerMiddleware:
     async def _process_request(self, request, spider):
         """Handle the request using Puppeteer"""
 
-        page = await self.browser.newPage()
+        try:
+            page = await self.browser.newPage()
+        except:
+            self.browser = await launch({'args': ['--no-sandbox'], 'dumpio':True})
+            page = await self.browser.newPage()
 
         await page._client.send('Page.setDownloadBehavior', {"behavior": 'allow', "downloadPath": request.meta['dir']});
 
@@ -73,24 +78,28 @@ class PuppeteerMiddleware:
             }
             await pu_request.continue_(overrides=overrides)
 
-        response = await page.goto(
-            request.url,
-            {
-                'waitUntil': request.wait_until
-            },
-        )
+        try:
+            response = await page.goto(
+                request.url,
+                {
+                    'waitUntil': request.wait_until,
+                },
+            )
+        except:
+            await page.close()
+            raise IgnoreRequest()
 
         if request.screenshot:
             request.meta['screenshot'] = await page.screenshot()
 
         content = await page.content()
         body = str.encode(content)
-
+        
         try:
             if request.script:
                 await Promise.all([
-                    page.waitForNavigation(),
-                    page.evaluate(request.script)
+                    page.evaluate(request.script),
+                    page.waitForNavigation({"timeout" : 5000})
                 ])
         except:
             pass
