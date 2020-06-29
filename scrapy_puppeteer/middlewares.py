@@ -2,9 +2,10 @@
 
 import asyncio
 import logging
-import sys, os
+import requests
+import sys, os, time
 
-from pyppeteer_fork import launch
+from pyppeteer import launch
 from scrapy import signals
 from scrapy.http import HtmlResponse
 from twisted.internet.defer import Deferred
@@ -28,8 +29,8 @@ class PuppeteerMiddleware:
         """Start the browser"""
 
         middleware = cls()
-        middleware.browser = await launch({'args': ['--no-sandbox'], 'dumpio':True, 'logLevel': crawler.settings.get('LOG_LEVEL')})
-        await middleware.browser.newPage()
+        middleware.browser = await launch({"headless": True, 'args': ['--no-sandbox'], 'dumpio':True, 'logLevel': crawler.settings.get('LOG_LEVEL')})
+        page = await middleware.browser.newPage()
         crawler.signals.connect(middleware.spider_closed, signals.spider_closed)
 
         return middleware
@@ -51,10 +52,9 @@ class PuppeteerMiddleware:
         try:
             page = await self.browser.newPage()
         except:
-            self.browser = await launch({'args': ['--no-sandbox'], 'dumpio':True})
+            self.browser = await launch({"headless": True, 'args': ['--no-sandbox'], 'dumpio':True})
+            await self.browser.newPage()
             page = await self.browser.newPage()
-
-        await page._client.send('Page.setDownloadBehavior', {"behavior": 'allow', "downloadPath": request.meta['dir']});
 
         # Cookies
         if isinstance(request.cookies, dict):
@@ -94,15 +94,6 @@ class PuppeteerMiddleware:
 
         content = await page.content()
         body = str.encode(content)
-        
-        try:
-            if request.script:
-                await Promise.all([
-                    page.evaluate(request.script),
-                    page.waitForNavigation({"timeout" : 5000})
-                ])
-        except:
-            pass
 
         if request.wait_for:
             await page.waitFor(request.wait_for)
