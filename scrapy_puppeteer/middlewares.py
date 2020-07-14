@@ -92,11 +92,12 @@ class PuppeteerMiddleware:
         if request.screenshot:
             request.meta['screenshot'] = await page.screenshot()
 
-        content = await page.content()
-        body = str.encode(content)
-
         if request.wait_for:
             await page.waitFor(request.wait_for)
+
+        if request.steps:
+            steps = code_g.generate_code(request.steps, functions_file)
+            pages = await steps.execute_steps(page=page)
 
         await page.close()
 
@@ -108,7 +109,7 @@ class PuppeteerMiddleware:
             page.url,
             status=response.status,
             headers=response.headers,
-            body=body,
+            body=pages or None,
             encoding='utf-8',
             request=request
         )
