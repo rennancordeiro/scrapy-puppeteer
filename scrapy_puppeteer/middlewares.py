@@ -5,6 +5,10 @@ import logging
 import requests
 import sys, os, time
 
+from step_crawler import code_generator as code_g
+from step_crawler import functions_file
+from step_crawler.functions_file import *
+from step_crawler import atomizer as atom
 from pyppeteer import launch
 from scrapy import signals
 from scrapy.http import HtmlResponse
@@ -97,7 +101,10 @@ class PuppeteerMiddleware:
 
         if request.steps:
             steps = code_g.generate_code(request.steps, functions_file)
-            pages = await steps.execute_steps(page=page)
+            request.meta["pages"] = await steps.execute_steps(page=page)
+
+        content = await page.content()
+        body = str.encode(content)
 
         await page.close()
 
@@ -109,7 +116,7 @@ class PuppeteerMiddleware:
             page.url,
             status=response.status,
             headers=response.headers,
-            body=pages or None,
+            body=body,
             encoding='utf-8',
             request=request
         )
