@@ -5,10 +5,6 @@ import logging
 import requests
 import sys, os, time
 
-from step_crawler import code_generator as code_g
-from step_crawler import functions_file
-from step_crawler.functions_file import *
-from step_crawler import atomizer as atom
 from pyppeteer import launch
 from scrapy import signals
 from scrapy.http import HtmlResponse
