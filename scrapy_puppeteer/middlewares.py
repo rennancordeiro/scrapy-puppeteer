@@ -68,18 +68,51 @@ class PuppeteerMiddleware:
         else:
             await page.setCookie(request.cookies)
 
-#         # The headers must be set using request interception
-#         await page.setRequestInterception(True)
+        async def setup_request_interceptor(page) -> None:
+            client = page._networkManager._client
 
-#         @page.on('request')
-#         async def _handle_headers(pu_request):
-#             overrides = {
-#                 'headers': {
-#                     k.decode(): ','.join(map(lambda v: v.decode(), v))
-#                     for k, v in request.headers.items()
-#                 }
-#             }
-#             await pu_request.continue_(overrides=overrides)
+            async def intercept(event) -> None:
+                interception_id = event["interceptionId"]
+
+                try:
+                    int_req = event["request"]
+                    url = int_req["url"]
+
+                    options = {
+                        "interceptionId": interception_id,
+                        'headers': {
+                            k.decode(): ','.join(map(lambda v: v.decode(), v))
+                            for k, v in request.headers.items()
+                        }
+                    }
+                        
+                    await client.send("Network.continueInterceptedRequest",
+                        options)
+                except:
+                    # If everything fails we need to be sure to continue the
+                    # request anyway, else the browser hangs
+                    options = {
+                        "interceptionId": interception_id,
+                        "errorReason": "BlockedByClient"
+                    }
+                    await client.send("Network.continueInterceptedRequest",
+                        options)
+
+
+            # Setup request interception for all requests.
+            client.on(
+                "Network.requestIntercepted",
+                lambda event: client._loop.create_task(intercept(event)),
+            )
+
+            # Set this up so that only the initial request is intercepted
+            # (else it would capture requests for external resources such as
+            # scripts, stylesheets, images, etc)
+            patterns = [{"urlPattern": request.url}]
+            await client.send("Network.setRequestInterception",
+                {"patterns": patterns})
+
+        await setup_request_interceptor(page)
 
         try:
             response = await page.goto(
